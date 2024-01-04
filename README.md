@@ -12,5 +12,6 @@ Project to understand/document/apply how to upload large files with golang witho
 - [ ] Script to upload file
 - [ ] Script to clean up (remove large files and containers)
 - [ ] Unit test proxy logic
-- [ ] E2E test for whole upload feature
-- [ ] proxy upload to minio using S3 API
+- [ ] upload large files to minio using S3 API
+- [ ] load test upload with k6
+- [ ] Create prom metric of upload throughput
