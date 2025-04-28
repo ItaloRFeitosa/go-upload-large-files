@@ -1,0 +1,97 @@
+services:
+  api:
+    build:
+      dockerfile: ./build/api/Dockerfile
+      context: .
+    environment:
+      - LOG_LEVEL=DEBUG
+      - GO_ENV=production
+      - PORT=8080
+      - USE_MINIO=true
+      - S3_ENDPOINT=http://minio:9000
+      - S3_ACCESS_KEY=${MINIO_ACCESS_KEY}
+      - S3_SECRET_KEY=${MINIO_SECRET_KEY}
+      - S3_BUCKET=${BUCKET_NAME}
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://lgtm:4318
+      - OTEL_METRIC_EXPORT_INTERVAL=5000
+      - OTEL_SERVICE_NAME=api
+    ports:
+      - "8080:8080"
+    depends_on:
+      - minio
+      - lgtm
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: "0.5"
+        reservations:
+          memory: 128M
+          cpus: "0.25"
+
+  minio:
+    image: minio/minio:latest
+    container_name: minio
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      MINIO_BROWSER: "on"
+      MINIO_DOMAIN: "localhost"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    command: ["server", "/data", "--console-address", ":9001"]
+    volumes:
+      - minio_data:/data
+
+  setup-minio:
+    image: minio/mc:latest
+    depends_on:
+      - minio
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY}
+      BUCKET_NAME: ${BUCKET_NAME}
+    entrypoint: >
+      /bin/sh -c '
+      /usr/bin/mc alias set minio http://minio:9000 "$${MINIO_ROOT_USER}" "$${MINIO_ROOT_PASSWORD}";
+      /usr/bin/mc mb minio/"$${BUCKET_NAME}";
+      /usr/bin/mc admin accesskey create minio/ --access-key "$${MINIO_ACCESS_KEY}" --secret-key "$${MINIO_SECRET_KEY}";
+      exit 0;
+      '
+  
+  lgtm:
+    build:
+      dockerfile: ./build/lgtm/Dockerfile
+      context: .
+    container_name: lgtm
+    ports:
+      - "3000:3000" # Grafana UI
+      - "4317:4317" # OpenTelemetry Collector (gRPC)
+      - "4318:4318" # OpenTelemetry Collector (HTTP)
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:latest
+    container_name: cadvisor
+    ports:
+      - "8081:8080"
+    volumes:
+      - /:/rootfs:ro
+      # classic installation
+      # - /var/run:/var/run:rw
+      # snap installation
+      - /var/run/docker.sock:/var/run/docker.sock:rw
+      - /sys:/sys:ro
+      # classic installation
+      # - /var/lib/docker/:/var/lib/docker:ro
+      # snap installation
+      - /var/snap/docker/common/var-lib-docker:/var/lib/docker:ro
+      - /etc/machine-id:/etc/machine-id:ro
+    privileged: true
+volumes:
+  minio_data:
